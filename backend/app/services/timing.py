@@ -69,8 +69,10 @@ def weekly_heatmap(channel: Channel, fmt: str = "long") -> list[list[float]]:
         alpha = min(0.7, n / 60)
         mx = max(max(r) for r in heat) or 1
         heat = [[(1 - alpha) * heat[d][h] / mx + alpha * lh[d][h] for h in range(24)] for d in range(7)]
-    mx = max(max(r) for r in heat) or 1
-    return [[round(v / mx, 3) for v in row] for row in heat]
+    mx = max(max(r) for r in heat)
+    mn = min(min(r) for r in heat)
+    span = (mx - mn) or 1
+    return [[round((v - mn) / span, 3) for v in row] for row in heat]
 
 
 def learned_heatmap(channel_id: int | None, fmt: str) -> tuple[int, list[list[float]]] | None:

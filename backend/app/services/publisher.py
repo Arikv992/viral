@@ -115,8 +115,7 @@ def schedule_channel(channel_id: int, publish_now: bool | None = None) -> list[P
             created.append(p)
     auto = setting("auto_publish") if publish_now is None else publish_now
     if auto:
-        for p in created:
-            publish(p.id)
+        created = [publish(p.id) for p in created]
     return created
 
 
@@ -189,17 +188,20 @@ def youtube_upload(p: Publication, v: Video, ch: Channel, creds) -> Publication:
         except Exception as e:  # noqa: BLE001
             log.warning("comentário falhou: %s", e)
     url = f"https://youtube.com/shorts/{vid}" if v.format == "short" else f"https://youtu.be/{vid}"
+    _mark_published(v.id)
+    return _set(p.id, status="published", external_id=vid, url=url, published_at=when or now())
+
+
+def _mark_published(video_id: int) -> None:
     with session_scope() as s:
-        vv = s.get(Video, v.id)
+        vv = s.get(Video, video_id)
         vv.status = "published"
         s.add(vv)
-        if vv.idea_id:
-            idea = s.get(Idea, vv.idea_id)
-            if idea:
-                idea.status = "published"
-                s.add(idea)
+        idea = s.get(Idea, vv.idea_id) if vv.idea_id else None
+        if idea:
+            idea.status = "published"
+            s.add(idea)
         s.commit()
-    return _set(p.id, status="published", external_id=vid, url=url, published_at=when or now())
 
 
 def export(p: Publication, v: Video, ch: Channel | None) -> Publication:
@@ -219,6 +221,7 @@ def export(p: Publication, v: Video, ch: Channel | None) -> Publication:
             "altered_or_synthetic_content": bool((v.compliance or {}).get("synthetic_disclosure")),
             "made_for_kids": False, "format": v.format}
     (out / "metadata.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+    _mark_published(v.id)
     return _set(p.id, status="exported", url=str(out), diagnosis={"export_dir": str(out)})
 
 

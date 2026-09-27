@@ -151,7 +151,7 @@ def allocate_budget(seed: int | None = None) -> dict:
         age_days = (now() - c.created_at).days
         young = age_days < 21 or n_videos[c.id] < 15
         # retorno por dólar -> pseudo-contagens (prior fraco Beta(1,1))
-        ret = rev / cost if cost > 0 else 0.0
+        ret = rev / cost if cost > 0 else (5.0 if rev > 0 else 0.0)  # receita sem custo = retorno máximo
         a = 1 + 10 * min(ret, 5) / 5
         b = 1 + 10 * (1 - min(ret, 5) / 5)
         sample = rng.betavariate(a, b)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ...config import get_settings
 from ...db import session_scope, touch
+from ...knowledge.niches import get_niche
 from ...models import Channel, Idea, Video, now
 from .. import compliance
 from ..imagegen import generate as gen_image
@@ -170,7 +171,10 @@ def _produce(video_id: int, render: bool) -> Video:
         v.output_path, v.thumbnail_path, v.duration_s = str(final), thumb, round(total, 2)
         s.add(v)
         s.commit()
-    final_check = compliance.check(v, ch.niche_key, use_llm=True)
+    # revisão LLM só onde o risco a justifica: longos, nichos sensíveis ou alertas na pré-verificação
+    niche_risk = (get_niche(ch.niche_key) or {}).get("policy_risk", 30)
+    final_check = compliance.check(v, ch.niche_key,
+                                   use_llm=v.format == "long" or niche_risk >= 40 or pre["risk"] >= 20)
     status = "ready" if final_check["verdict"] != "block" else "failed"
     _log(video_id, f"Guardião: {final_check['verdict']} (risco {final_check['risk']})", status=status,
          compliance=final_check)
@@ -243,7 +247,7 @@ def _render_clip(video_id: int, ch: Channel, info: dict, segs: list[dict], clip:
                    "-shortest", out / "body_a.mp4"])
         body = out / "body_a.mp4"
     joined = out / "joined.mp4"
-    media.run(["-i", intro_av, "-i", body, "-filter_complex", "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]",
+    media.run(["-i", intro_av, "-i", body, "-filter_complex", "[0:v]setsar=1[v0];[1:v]setsar=1[v1];[v0][0:a][v1][1:a]concat=n=2:v=1:a=1[v][a]",
                "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac",
                joined])
     words = hook["words"] + clipper.words_in_range(segs, clip["start"], clip["end"], hook["duration"])

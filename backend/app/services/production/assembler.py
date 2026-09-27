@@ -20,7 +20,7 @@ def render_image_scene(img: str, dur: float, dest: Path, w: int, h: int, idx: in
     xexpr = "iw/2-(iw/zoom/2)" if idx % 3 else "(iw-iw/zoom)*on/{f}".format(f=frames)
     vf = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
           f"zoompan=z='{zexpr}':x='{xexpr}':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={FPS},"
-          "eq=contrast=1.06:saturation=0.9,format=yuv420p")
+          "eq=contrast=1.06:saturation=0.9,setsar=1,format=yuv420p")
     media.run(["-loop", "1", "-i", img, "-t", f"{dur:.3f}", "-vf", vf, "-r", FPS, "-an", "-c:v", "libx264",
                "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", dest])
     return dest
@@ -44,7 +44,7 @@ def render_clip_vertical(src: str, start: float, end: float, dest: Path) -> Path
     dur = end - start
     fc = ("[0:v]split=2[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
           "boxblur=30:5,eq=brightness=-0.12[bg];[b]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,"
-          f"fps={FPS},format=yuv420p[v]")
+          f"fps={FPS},setsar=1,format=yuv420p[v]")
     media.run(["-ss", f"{start:.3f}", "-i", src, "-t", f"{dur:.3f}", "-filter_complex", fc, "-map", "[v]",
                "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "44100",
                "-ac", "2", dest])

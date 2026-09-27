@@ -13,3 +13,4 @@ google-api-python-client>=2.140
 google-auth-oauthlib>=1.2
 apscheduler>=3.10,<4
 pytest>=8
+piper-tts>=1.2  # voz neural local grátis (offline)

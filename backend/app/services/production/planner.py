@@ -60,7 +60,9 @@ def target_duration(fmt: str, niche_key: str = "") -> int:
 
 
 def estimate_cost(mode: str, fmt: str, seconds: int, voice: str = "tts:edge", image_tier: str = "img:flux-schnell",
-                  ai_video_share: float = 0.0, video_tier: str = "vid:kling-std") -> dict:
+                  ai_video_share: float = 0.0, video_tier: str = "vid:kling-std", caps: dict | None = None) -> dict:
+    if caps is not None and not caps.get("ai_images"):
+        image_tier = "img:procedural"  # sem chave de imagens IA: arte procedural, custo zero
     model = get_settings().llm_model
     words = seconds * (2.5 if fmt == "short" else 2.5)
     chars = words * 6
@@ -68,7 +70,8 @@ def estimate_cost(mode: str, fmt: str, seconds: int, voice: str = "tts:edge", im
     scenes = max(4, int(seconds / scene_len))
     # LLM: guião (+ thinking), packaging e compliance
     out_tok = words * 1.6 + scenes * 60 + 2500
-    llm = llm_cost(model, 6000, int(out_tok)) + llm_cost(model, 4000 + words * 1.5, 1800) * 2
+    # guião + packaging (+ revisão do Guardião só nos longos; nos Shorts corre só quando há risco)
+    llm = llm_cost(model, 6000, int(out_tok)) + llm_cost(model, 4000 + words * 1.5, 1500) * (2 if fmt == "long" else 1)
     tts = chars / 1000 * price(voice, "per_1k_chars")
     visuals = 0.0
     ai_video = 0.0
@@ -80,7 +83,7 @@ def estimate_cost(mode: str, fmt: str, seconds: int, voice: str = "tts:edge", im
         visuals = (scenes - vid_scenes) * price(image_tier, "per_image")
     elif mode == "text_story":
         visuals = 0.0
-    thumb = price("img:flux-dev", "per_image") if fmt == "long" else 0.0
+    thumb = price(image_tier if image_tier == "img:procedural" else "img:flux-dev", "per_image") if fmt == "long" else 0.0
     render = seconds / 60 * price("render:local", "per_minute")
     if mode == "clip_commentary":
         llm *= 0.6
@@ -126,7 +129,7 @@ def plan(idea_scores: dict, fmt: str, niche_key: str, channel_monetized: bool = 
             q *= 0.75
         if key == "ai_images_narrated" and not caps.get("ai_images"):
             q *= 0.8
-        cost = estimate_cost(key, fmt, seconds)
+        cost = estimate_cost(key, fmt, seconds, caps=caps)
         value = views * q * rpm / 1000 * value_factor
         risk = (m["risk"] + niche.get("policy_risk", 20)) / 2
         profit = value * (1 - risk / 200) - cost["total"]
@@ -148,7 +151,7 @@ def plan(idea_scores: dict, fmt: str, niche_key: str, channel_monetized: bool = 
     if not channel_monetized:
         why += "Canal ainda sem YPP: valor contado a 50% (estratégico), por isso o plano favorece custo mínimo. "
     return {"mode": chosen["mode"], "format": fmt, "target_seconds": seconds, "chosen": chosen,
-            "options": sorted(options, key=lambda o: -o["expected_profit"]), "upgrades": upgrades,
+            "options": sorted(options, key=lambda o: (bool(o["blocked"]), -o["expected_profit"])), "upgrades": upgrades,
             "per_video_cap": round(per_video_cap, 3), "why": why}
 
 
