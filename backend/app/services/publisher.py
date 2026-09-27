@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from datetime import timedelta
 from pathlib import Path
 
 from sqlmodel import select
@@ -103,13 +104,22 @@ def schedule_channel(channel_id: int, publish_now: bool | None = None) -> list[P
         vids = [v for v in todo if v.format == fmt]
         if not vids:
             continue
-        slots = next_slots(ch, fmt, len(vids))
-        for v, when in zip(vids, slots):
+        for v in vids:
+            attempt, not_before = _republish_info(v)
+            # slot seguinte livre (os já atribuídos ficam ocupados porque são gravados um a um)
+            nxt = next_slots(ch, fmt, 1, after=max(now(), not_before) if not_before else None)
+            if not nxt:
+                continue
+            when = nxt[0]
             with session_scope() as s:
-                p = Publication(video_id=v.id, channel_id=channel_id, scheduled_at=when,
+                p = Publication(video_id=v.id, channel_id=channel_id, scheduled_at=when, attempt=attempt,
                                 platform="youtube_shorts" if fmt == "short" else "youtube",
                                 title=(v.packaging or {}).get("title", ""), status="scheduled")
                 s.add(p)
+                # TikTok (quando ligado): os Shorts são cross-postados 2h depois
+                if fmt == "short" and (ch.oauth_token or {}).get("tiktok"):
+                    s.add(Publication(video_id=v.id, channel_id=channel_id, scheduled_at=when + timedelta(hours=2),
+                                      platform="tiktok", title=p.title, status="scheduled", attempt=attempt))
                 s.commit()
                 s.refresh(p)
             created.append(p)
@@ -117,6 +127,20 @@ def schedule_channel(channel_id: int, publish_now: bool | None = None) -> list[P
     if auto:
         created = [publish(p.id) for p in created]
     return created
+
+
+def _republish_info(v: Video) -> tuple[int, object]:
+    """Republicações: nº da tentativa e data mínima (>= 7 dias após a publicação original, para não competir)."""
+    with session_scope() as s:
+        idea = s.get(Idea, v.idea_id) if v.idea_id else None
+        if not idea or idea.origin != "republish" or not idea.parent_video_id:
+            return 1, None
+        prev = s.exec(select(Publication).where(Publication.video_id == idea.parent_video_id)).all()
+    if not prev:
+        return 2, None
+    last = max(prev, key=lambda p: p.attempt)
+    base = last.published_at or last.scheduled_at or now()
+    return last.attempt + 1, base + timedelta(days=7)
 
 
 def publish(pub_id: int) -> Publication:
