@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -25,6 +26,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="VIRAL-OPS", version="1.0", lifespan=lifespan)
+if os.environ.get("VERCEL"):
+    init_db()  # funções serverless podem não correr o lifespan: garantir as tabelas no arranque
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(api)
 app.mount("/media", StaticFiles(directory=str(get_settings().media_dir)), name="media")

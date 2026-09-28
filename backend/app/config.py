@@ -6,19 +6,22 @@ Cada chave que adicionas desbloqueia uma camada de qualidade/automação.
 """
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[2]
+# No Vercel o sistema de ficheiros só é gravável em /tmp (efémero por instância)
+DEFAULT_DATA = Path("/tmp/viral-data") if os.environ.get("VERCEL") else ROOT / "data"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(ROOT / ".env"), extra="ignore")
 
     # --- Armazenamento ---
-    data_dir: Path = ROOT / "data"
+    data_dir: Path = DEFAULT_DATA
     database_url: str = ""  # vazio => sqlite em data_dir/viral.db
 
     # --- Cérebro (Claude) ---
@@ -55,7 +58,12 @@ class Settings(BaseSettings):
     @property
     def db_url(self) -> str:
         if self.database_url:
-            return self.database_url
+            url = self.database_url
+            # Postgres (Neon/Vercel/Supabase): usar o driver psycopg 3
+            for prefix in ("postgres://", "postgresql://"):
+                if url.startswith(prefix):
+                    return "postgresql+psycopg://" + url[len(prefix):]
+            return url
         self.data_dir.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{self.data_dir / 'viral.db'}"
 
